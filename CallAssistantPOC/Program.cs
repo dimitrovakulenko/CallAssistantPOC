@@ -92,7 +92,6 @@ app.MapPost("/api/callbacks", async (CloudEvent[] cloudEvents, ILogger<Program> 
 
             StartRecordingOptions recordingOptions = new StartRecordingOptions(new ServerCallLocator(callConnected.ServerCallId))
             {
-                //RecordingStateCallbackUri = new Uri(new Uri(callbackUriHost), "/api/recording-callbacks"),
                 RecordingContent = RecordingContent.Audio,
                 RecordingChannel = RecordingChannel.Mixed,
                 RecordingFormat = RecordingFormat.Wav,
@@ -151,12 +150,6 @@ app.MapGet("/audio/{filename}", async (string filename, HttpContext context) =>
         File.Delete(filePath);
     });
 });
-
-//app.MapPost("/api/recording-callbacks", async (CloudEvent[] recordingEvents, ILogger<Program> logger) =>
-//{
-//    // do nothing
-//    return Results.Ok();
-//}).Produces(StatusCodes.Status200OK);
 
 async Task ReceiveAudioDataAsync(WebSocket webSocket, ILogger<Program> logger)
 {
