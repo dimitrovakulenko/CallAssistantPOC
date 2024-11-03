@@ -125,6 +125,7 @@ app.MapPost("/api/callbacks", async (CloudEvent[] cloudEvents, ILogger<Program> 
                     if (!string.IsNullOrEmpty(recordingId))
                     {
                         await callRecording.StopAsync(recordingId);
+                        recordingId = string.Empty;
                     }
                     await callAutomationClient.GetCallConnection(parsedEvent.CallConnectionId).HangUpAsync(true);
                     readyToFinish = false;
@@ -220,8 +221,11 @@ async Task ReceiveAndProcessChatUpdatesAsync(
 
                 if (itemFinishedUpdate.FunctionCallId is not null)
                 {
-                    readyToFinish = true;
-                    logger.LogInformation("Call ended by chatbot tool invocation.");
+                    if (itemFinishedUpdate.FunctionName == "EndCall")
+                    {
+                        readyToFinish = true;
+                        logger.LogInformation("About to end call.");
+                    }
                 }
 
                 break;
