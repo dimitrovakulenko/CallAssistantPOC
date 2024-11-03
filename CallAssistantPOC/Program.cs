@@ -2,7 +2,6 @@
 using Azure.Communication;
 using Azure.Communication.CallAutomation;
 using Azure.Messaging;
-using Microsoft.Extensions.Logging;
 using NAudio.Wave;
 using OpenAI.RealtimeConversation;
 using System.ClientModel;
@@ -32,9 +31,10 @@ Directory.CreateDirectory(audioFilesDirectory);
 
 var chatSession = await InitializeChatSessionAsync();
 
-int sampleRate = 16000;
-int channels = 1;
-string recordingId = string.Empty;
+var sampleRate = 16000;
+var channels = 1;
+var recordingId = string.Empty;
+var readyToFinish = false;
 
 app.MapPost("/outboundCall", async (ILogger<Program> logger) =>
 {
@@ -107,17 +107,35 @@ app.MapPost("/api/callbacks", async (CloudEvent[] cloudEvents, ILogger<Program> 
             logger.LogInformation("Call disconnected...");
 
             // Stop the recording when the call is disconnected
-            if (!string.IsNullOrEmpty(recordingId))
+            if (!string.IsNullOrEmpty(parsedEvent.CallConnectionId)
+                && !string.IsNullOrEmpty(parsedEvent.ServerCallId)
+                && !string.IsNullOrEmpty(recordingId))
             {
                 await callRecording.StopAsync(recordingId);
                 logger.LogInformation("Stopped recording");
+            }
+        }
+        else if (parsedEvent is PlayCompleted playCompleted)
+        {
+            if (readyToFinish)
+            {
+                if (!string.IsNullOrEmpty(parsedEvent.CallConnectionId)
+                    && !string.IsNullOrEmpty(parsedEvent.ServerCallId))
+                {
+                    if (!string.IsNullOrEmpty(recordingId))
+                    {
+                        await callRecording.StopAsync(recordingId);
+                    }
+                    await callAutomationClient.GetCallConnection(parsedEvent.CallConnectionId).HangUpAsync(true);
+                    readyToFinish = false;
+                }
             }
         }
         else if (parsedEvent is PlayFailed playFailed)
         {
             var resultInfo = playFailed.ResultInformation;
             logger.LogError("Play failed. Code: {code}, SubCode: {subCode}, Message: {message}",
-                resultInfo?.Code, resultInfo?.SubCode, resultInfo?.Message);            
+                resultInfo?.Code, resultInfo?.SubCode, resultInfo?.Message);
         }
     }
     return Results.Ok();
@@ -196,8 +214,16 @@ async Task ReceiveAndProcessChatUpdatesAsync(
                 break;
                 
             case ConversationItemFinishedUpdate itemFinishedUpdate:
-                if (itemFinishedUpdate.MessageContentParts.Any())
+                if (itemFinishedUpdate.MessageContentParts is not null 
+                    && itemFinishedUpdate.MessageContentParts.Any())
                     logger.LogInformation($"ChatGPT: {itemFinishedUpdate.MessageContentParts[0].AudioTranscriptValue}");
+
+                if (itemFinishedUpdate.FunctionCallId is not null)
+                {
+                    readyToFinish = true;
+                    logger.LogInformation("Call ended by chatbot tool invocation.");
+                }
+
                 break;
 
             case ConversationResponseFinishedUpdate:
@@ -225,6 +251,10 @@ async Task ReceiveAndProcessChatUpdatesAsync(
                 var res = await callMedia.PlayToAllAsync(playOptions);
 
                 accumulatedAudioStream.SetLength(0);
+
+                if (readyToFinish)
+                    return;
+
                 break;
 
             case ConversationErrorUpdate errorUpdate:
@@ -305,7 +335,9 @@ async Task<RealtimeConversationSession> InitializeChatSessionAsync()
         "When you are giving a call act normally, keep short sentences, do not output too much info at once. " +
         "For example start with hello and explaining what you are (an AI assistant of Dmytro Vakulenko) " +
         "and that you would like to make an appointment, later depending on the answer from " +
-        "the dentist office discuss the time for the appointemnt. ",
+        "the dentist office discuss the time for the appointemnt. " +
+        "Once a time is agreed upon or there is no suitable time, please call the 'EndCall' tool to terminate the conversation. " +
+        "Don't forget thank you and good bye before ending the call.",
         InputAudioFormat = ConversationAudioFormat.Pcm16,
         OutputAudioFormat = ConversationAudioFormat.G711Alaw,
         Voice = ConversationVoice.Alloy,
@@ -317,6 +349,12 @@ async Task<RealtimeConversationSession> InitializeChatSessionAsync()
                 TimeSpan.FromMilliseconds(200),
                 TimeSpan.FromMilliseconds(300))
     };
+
+    sessionOptions.Tools.Add(new ConversationFunctionTool()
+    {
+        Name = "EndCall",
+        Description = "This tool ends the call when an appointmnt is agreed or no appointment date is availablle."
+    });
 
     await chatGptSession.ConfigureSessionAsync(sessionOptions);
     return chatGptSession;
