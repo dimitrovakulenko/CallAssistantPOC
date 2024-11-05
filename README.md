@@ -4,7 +4,7 @@ This POC leverages Azure OpenAI's GPT-4o Realtime API and Azure Communication Se
 
 Designed for scenarios like appointment scheduling, this system can handle real-time conversations by directly connecting callers with the GPT-4o model, bypassing the need for separate speech-to-text and text-to-speech services.
 
-[![Watch the demo video](https://img.youtube.com/vi/I8w0Hh9h4oo/0.jpg)](https://www.youtube.com/watch?v=I8w0Hh9h4oo)
+[Watch the demo video on YouTube](https://www.youtube.com/watch?v=I8w0Hh9h4oo)
 
 ## Table of Contents
 - [Getting Started](#getting-started)
